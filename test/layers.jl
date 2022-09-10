@@ -1,4 +1,5 @@
 using NNlib, PyCall, Flax, Flux
+using Test
 
 py"""
 import jax
@@ -110,3 +111,29 @@ end
     )
     @test isapprox(m(xx), yy, rtol=1e-5)
 end
+
+#############################
+
+py"""
+def convTtest(seed):
+    rng = jax.random.PRNGKey(seed)
+    rng, init_key = jax.random.split(rng)
+    x = jax.random.normal(rng,[1,4,4,1])
+    convt = nn.ConvTranspose(4,(3,3),padding='SAME')
+    ps = convt.init(init_key, x)['params']
+    y = convt.apply({'params':ps}, x)
+    return np.asfarray(ps['kernel']), np.asfarray(ps['bias']), \
+      np.asfarray(x), np.asfarray(y), \
+      # np.asfarray(y0), np.asfarray(y1)
+"""
+
+#@testset "ConvTranspose" begin
+    W,b,x,y = py"convTtest"(23)
+    xx = Float32.(permutedims(x, (3,2,4,1)))
+    Wp = permutedims(W,(1,2,4,3))
+    fct = ConvTranspose(Wp,Flax.fixbias(b), pad=SamePad(), dilation = 0, stride=1)
+    res = fct(xx)
+    yyt = permutedims(y, (3,2,4,1))
+    isapprox(res, yyt; atol=1e-6)    
+#end
+fcct = ConvTranspose((3,3),1=>4,pad=0)
