@@ -118,8 +118,8 @@ py"""
 def convTtest(seed):
     rng = jax.random.PRNGKey(seed)
     rng, init_key = jax.random.split(rng)
-    x = jax.random.normal(rng,[1,4,4,1])
-    convt = nn.ConvTranspose(4,(3,3),padding='SAME')
+    x = jax.random.normal(rng,[1,2,2,1])
+    convt = nn.ConvTranspose(1,(2,2))
     ps = convt.init(init_key, x)['params']
     y = convt.apply({'params':ps}, x)
     return np.asfarray(ps['kernel']), np.asfarray(ps['bias']), \
@@ -130,10 +130,62 @@ def convTtest(seed):
 #@testset "ConvTranspose" begin
     W,b,x,y = py"convTtest"(23)
     xx = Float32.(permutedims(x, (3,2,4,1)))
-    Wp = permutedims(W,(1,2,4,3))
-    fct = ConvTranspose(Wp,Flax.fixbias(b), pad=SamePad(), dilation = 0, stride=1)
+    yy = permutedims(y, (2,3,4,1))
+    Wp = permutedims(W, (1,2,4,3))
+    fct = ConvTranspose(Flax.fixconvkernel(W),Flax.fixbias(b), pad=SamePad(), stride=1, dilation=0)
     res = fct(xx)
     yyt = permutedims(y, (3,2,4,1))
     isapprox(res, yyt; atol=1e-6)    
 #end
-fcct = ConvTranspose((3,3),1=>4,pad=0)
+fcct = ConvTranspose((3,3),1=>1,pad=0)
+
+
+
+rand(1,1,1,1)
+fcct(rand(1,1,1,1))
+
+
+py"""
+import haiku as hk
+
+def hkct():
+    def hkconvtfn(x: jnp.ndarray) -> jnp.ndarray:
+        net = hk.Sequential([
+            hk.Conv2DTranspose(1, (3,3))
+        ])
+        return net(x)
+    seed = 3
+    rng = jax.random.PRNGKey(seed)
+    rng, init_key = jax.random.split(rng)
+    x = jax.random.normal(rng,[1,3,3,1])
+    hkconvtfn_t = hk.without_apply_rng(hk.transform(hkconvtfn))
+    params = hkconvtfn_t.init(init_key, x)
+    hkconvtfn_t.apply(params, x)
+    w = params['conv2_d_transpose']['w']
+    b = params['conv2_d_transpose']['b']
+    stride = (1,1)
+    padding = "SAME"
+    y = jax.lax.conv_transpose(x, w, strides = stride, \
+        padding=padding, transpose_kernel=True)
+    return np.asfarray(w), np.asfarray(b), np.asfarray(x), np.asfarray(y)
+"""
+
+w,b,x,y = py"hkct()"
+
+xx = permutedims(x, (3,2,4,1))
+yy = permutedims(y, (3,2,4,1))
+
+fct = ConvTranspose(Flax.fixconvkernel(w),b, pad = 0, dilation = 0)
+
+fct(xx)
+
+py"""
+def dummyfn(arg=None):
+    return arg
+"""
+
+using BenchmarkTools
+
+z = randn(Float32, 1, 32, 32, 4)
+
+@benchmark py"dummyfn"($z)
