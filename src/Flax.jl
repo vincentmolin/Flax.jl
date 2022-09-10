@@ -1,5 +1,5 @@
 module Flax
 
-# Write your package code here.
+include("layers.jl")
 
 end
